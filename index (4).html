@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>수달 vs 족제비 AI 판별기</title>
+<style>
+:root{font-family:system-ui,-apple-system,'Malgun Gothic',sans-serif;color:#193047;background:#edf7fb}*{box-sizing:border-box}body{margin:0;padding:28px 16px}.wrap{max-width:760px;margin:auto}.hero{text-align:center;margin-bottom:25px}h1{font-size:clamp(26px,5vw,39px);margin:10px 0}.sub{color:#5d7180}.panel{background:#fff;border-radius:22px;padding:24px;box-shadow:0 12px 40px #25445b18;margin:16px 0}.controls{display:flex;flex-wrap:wrap;gap:10px}button,.upload{border:0;background:#1979ca;color:#fff;border-radius:12px;padding:13px 18px;font:inherit;font-weight:700;cursor:pointer}button.secondary{background:#e3f1fa;color:#195f91}button:disabled{opacity:.5;cursor:not-allowed}input[type=file]{display:none}.view{background:#f3f8fb;min-height:260px;border:2px dashed #c5dae8;border-radius:15px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin:17px 0}.view img,.view video,.view canvas{max-width:100%;max-height:440px;object-fit:contain}.placeholder{color:#7890a1;text-align:center;padding:30px}.status{font-size:14px;color:#4e7286;margin-top:10px}.result-title{font-size:24px;font-weight:800;margin:8px 0 18px}.line{display:flex;justify-content:space-between;margin:14px 0 7px}.track{height:14px;background:#e8eff5;border-radius:20px;overflow:hidden}.fill{height:100%;width:0%;background:#25a7a3;transition:width .2s}.row-result:nth-child(2) .fill{background:#e2a14c}.note{font-size:13px;color:#688090;line-height:1.6}#results{display:none}
+</style>
+</head>
+<body><main class="wrap"><header class="hero"><div style="font-size:46px">🦦 🐾</div><h1>수달 vs 족제비 AI 판별기</h1><p class="sub">사진을 올리거나 카메라로 동물을 비춰 보세요.</p></header>
+<section class="panel"><div class="controls"><label class="upload" for="file">📷 사진 업로드</label><input id="file" type="file" accept="image/*"><button id="start" class="secondary">🎥 카메라 시작</button><button id="stop" class="secondary" disabled>카메라 종료</button></div><div class="view" id="view"><div class="placeholder">이곳에 사진 또는 카메라 화면이 표시됩니다.</div></div><div class="status" id="status" role="status">AI 모델 연결 중...</div></section>
+<section class="panel" id="results"><div class="sub">AI 분석 결과</div><div class="result-title" id="winner">분석 중...</div><div id="bars"></div><p class="note">표시되는 값은 AI 모델의 예측 점수이며 실제 정확도를 보장하지 않습니다. 모델에 학습된 클래스 이름을 그대로 사용합니다.</p></section>
+<p class="note">Teachable Machine 이미지 모델: Tn3TGYDPz · 인터넷 연결 필요 · 카메라는 localhost 또는 HTTPS 환경에서 사용하세요.</p></main>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.5/dist/teachablemachine-image.min.js"></script>
+<script>
+const MODEL_URL='https://teachablemachine.withgoogle.com/models/Tn3TGYDPz/';
+const file=document.getElementById('file'),view=document.getElementById('view'),status=document.getElementById('status'),start=document.getElementById('start'),stop=document.getElementById('stop'),results=document.getElementById('results'),winner=document.getElementById('winner'),bars=document.getElementById('bars');
+let model=null,stream=null,video=null,frame=0,busy=false,mode=0;
+function say(s){status.textContent=s}
+async function loadModel(){try{if(!window.tmImage)throw Error('AI 라이브러리를 불러오지 못했습니다.');model=await tmImage.load(MODEL_URL+'model.json',MODEL_URL+'metadata.json');say('AI 모델 연결 완료! 사진을 올리거나 카메라를 켜세요.');if(file.files[0])analyzeFile(file.files[0]);}catch(e){say('모델 연결 실패: '+e.message+' (인터넷 연결과 모델 공개 여부를 확인하세요.)')}}
+function showPredictions(pred){pred.sort((a,b)=>b.probability-a.probability);results.style.display='block';winner.textContent=pred[0].className+' · '+(pred[0].probability*100).toFixed(1)+'%';bars.replaceChildren();pred.forEach(p=>{let el=document.createElement('div');el.className='row-result';let line=document.createElement('div');line.className='line';let name=document.createElement('strong');name.textContent=p.className;let pct=document.createElement('span');pct.textContent=(p.probability*100).toFixed(1)+'%';line.append(name,pct);let track=document.createElement('div');track.className='track';let fill=document.createElement('div');fill.className='fill';fill.style.width=(p.probability*100)+'%';track.append(fill);el.append(line,track);bars.append(el)})}
+async function predict(source){if(!model||busy)return;busy=true;try{showPredictions(await model.predict(source))}catch(e){say('분석 실패: '+e.message)}finally{busy=false}}
+async function analyzeFile(f){stopCamera();if(!f)return;const current=++mode;const img=new Image();const url=URL.createObjectURL(f);img.onload=async()=>{URL.revokeObjectURL(url);if(current!==mode)return;view.replaceChildren(img);if(!model){say('모델을 불러오는 중입니다...');return}say('사진 분석 완료');await predict(img)};img.onerror=()=>{URL.revokeObjectURL(url);say('이미지를 읽을 수 없습니다.')};img.src=url}
+file.addEventListener('change',()=>analyzeFile(file.files[0]));
+function stopCamera(){mode++;cancelAnimationFrame(frame);if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}video=null;stop.disabled=true;start.disabled=false}
+async function loop(current){if(!video||current!==mode)return;if(video.readyState>=2)await predict(video);if(current===mode)frame=requestAnimationFrame(()=>loop(current))}
+start.addEventListener('click',async()=>{stopCamera();if(!model){say('AI 모델이 아직 준비되지 않았습니다.');return}try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});const current=++mode;video=document.createElement('video');video.autoplay=true;video.muted=true;video.playsInline=true;video.srcObject=stream;view.replaceChildren(video);await video.play();start.disabled=true;stop.disabled=false;say('실시간 분석 중...');loop(current)}catch(e){stopCamera();say('카메라 실행 실패: '+e.message+' (HTTPS 또는 Live Server localhost에서 실행하세요.)')}});
+stop.addEventListener('click',()=>{stopCamera();say('카메라를 종료했습니다.')});window.addEventListener('pagehide',stopCamera);loadModel();
+</script></body></html>
